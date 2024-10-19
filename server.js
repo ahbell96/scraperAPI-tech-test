@@ -25,15 +25,11 @@ app.get("/", (req, res) => {
 app.post("/html-page", uploadFields, (req, res) => {
   const files = req.files;
 
-  console.log("files : ", files);
-
   if (!files) {
     return res
       .status(400)
       .send({ status: 400, message: "no files available." });
   }
-
-  console.log("files are available.");
 
   const html = files.htmlFile[0].buffer.toString("utf-8");
   const cssSelectors = JSON.parse(files.jsonFile[0].buffer.toString("utf-8"));
@@ -52,9 +48,62 @@ app.post("/html-page", uploadFields, (req, res) => {
     status: 200,
     message: "Files are available.",
     data: {
-      title: title ?? "",
-      firstParagraph: firstParagraph,
+      title: title || "",
+      firstParagraph: firstParagraph || "",
     },
+  });
+});
+
+app.post("/extract-repetitive-data", uploadFields, (req, res) => {
+  const files = req.files;
+
+  if (!files) {
+    return res
+      .status(400)
+      .send({ status: 400, message: "no files available." });
+  }
+
+  const html = files.htmlFile[0].buffer.toString("utf-8");
+  const cssSelectors = JSON.parse(files.jsonFile[0].buffer.toString("utf-8"));
+
+  // Parse the HTML file using Cheerio
+  const $ = cheerio.load(html);
+
+  // get title
+  const title = $("h1:first-child").text().trim();
+
+  // get prices
+  const prices = [];
+  $(cssSelectors.prices.tableRow).each((index, element) => {
+    if (index === 0) {
+      // ignore headers and return
+      return;
+    }
+
+    console.log(
+      "element after: ",
+      $(element).find("td:nth-child(1)").text().trim()
+    );
+    const itemName = $(element).find("td:nth-child(1)").text().trim();
+    const price = $(element).find("td:nth-child(2)").text().trim();
+
+    // collect item and prices
+    prices.push({
+      itemName: itemName,
+      price: price,
+    });
+  });
+
+  // Create the final output JSON object
+  const output = {
+    title: title,
+    prices: prices,
+  };
+
+  return res.status(200).send({
+    status: 200,
+    message: "Files are available.",
+    data: output,
   });
 });
 
