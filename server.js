@@ -21,90 +21,190 @@ app.get("/", (req, res) => {
   res.status(200).send("hello!");
 });
 
-// post html doc route
 app.post("/html-page", uploadFields, (req, res) => {
-  const files = req.files;
+  try {
+    const files = req.files;
 
-  if (!files) {
-    return res
-      .status(400)
-      .send({ status: 400, message: "no files available." });
-  }
-
-  const html = files.htmlFile[0].buffer.toString("utf-8");
-  const cssSelectors = JSON.parse(files.jsonFile[0].buffer.toString("utf-8"));
-
-  // Parse the HTML file using Cheerio
-  const $ = cheerio.load(html);
-
-  // fetch the wanted content via the css Selectors
-  const title = $(cssSelectors.title).text();
-  const firstParagraph = $(cssSelectors.firstParagraph)
-    .text()
-    .replace(/\n\s+/g, "") // replace white space and escapes with blank.
-    .trim();
-
-  return res.status(200).send({
-    status: 200,
-    message: "Files are available.",
-    data: {
-      title: title || "",
-      firstParagraph: firstParagraph || "",
-    },
-  });
-});
-
-app.post("/extract-repetitive-data", uploadFields, (req, res) => {
-  const files = req.files;
-
-  if (!files) {
-    return res
-      .status(400)
-      .send({ status: 400, message: "no files available." });
-  }
-
-  const html = files.htmlFile[0].buffer.toString("utf-8");
-  const cssSelectors = JSON.parse(files.jsonFile[0].buffer.toString("utf-8"));
-
-  // Parse the HTML file using Cheerio
-  const $ = cheerio.load(html);
-
-  // get title
-  const title = $("h1:first-child").text().trim();
-
-  // get prices
-  const prices = [];
-  $(cssSelectors.prices.tableRow).each((index, element) => {
-    if (index === 0) {
-      // ignore headers and return
-      return;
+    // Check if files were uploaded
+    if (!files || !files.htmlFile || !files.jsonFile) {
+      return res.status(400).send({
+        status: 400,
+        message: "Both HTML and JSON files are required.",
+      });
     }
 
-    console.log(
-      "element after: ",
-      $(element).find("td:nth-child(1)").text().trim()
-    );
-    const itemName = $(element).find("td:nth-child(1)").text().trim();
-    const price = $(element).find("td:nth-child(2)").text().trim();
+    let html, cssSelectors;
 
-    // collect item and prices
-    prices.push({
-      itemName: itemName,
-      price: price,
+    // Check for errors when converting file buffers to strings
+    try {
+      html = files.htmlFile[0].buffer.toString("utf-8");
+      cssSelectors = JSON.parse(files.jsonFile[0].buffer.toString("utf-8"));
+    } catch (parseError) {
+      return res.status(400).send({
+        status: 400,
+        message:
+          "Invalid file format. Please ensure HTML and JSON files are valid.",
+        error: parseError.message,
+      });
+    }
+
+    // Check for required CSS selectors in the JSON file
+    if (!cssSelectors.title || !cssSelectors.firstParagraph) {
+      return res.status(400).send({
+        status: 400,
+        message:
+          "CSS selectors for 'title' and 'firstParagraph' are required in the JSON file.",
+      });
+    }
+
+    // Parse the HTML using Cheerio
+    const $ = cheerio.load(html);
+
+    // Extract data using the provided CSS selectors
+    let title, firstParagraph;
+
+    try {
+      title = $(cssSelectors.title).text();
+      firstParagraph = $(cssSelectors.firstParagraph)
+        .text()
+        .replace(/\n\s+/g, "") // Remove excess white space and newlines
+        .trim();
+    } catch (selectorError) {
+      return res.status(400).send({
+        status: 400,
+        message: "Error extracting data using the provided CSS selectors.",
+        error: selectorError.message,
+      });
+    }
+
+    // Send the response with the extracted data
+    return res.status(200).send({
+      status: 200,
+      message: "Files processed successfully.",
+      data: {
+        title: title || "Title not found",
+        firstParagraph: firstParagraph || "First paragraph not found",
+      },
     });
-  });
+  } catch (err) {
+    // Catch any other unforeseen errors
+    return res.status(500).send({
+      status: 500,
+      message: "An unexpected error occurred.",
+      error: err.message,
+    });
+  }
+});
+app.post("/extract-repetitive-data", uploadFields, (req, res) => {
+  try {
+    const files = req.files;
 
-  // Create the final output JSON object
-  const output = {
-    title: title,
-    prices: prices,
-  };
+    // Check if files are present
+    if (!files || !files.htmlFile || !files.jsonFile) {
+      return res.status(400).send({
+        status: 400,
+        message: "Both HTML and JSON files are required.",
+      });
+    }
 
-  return res.status(200).send({
-    status: 200,
-    message: "Files are available.",
-    data: output,
-  });
+    let html, cssSelectors;
+
+    // Handle file reading errors (HTML and JSON)
+    try {
+      html = files.htmlFile[0].buffer.toString("utf-8");
+      cssSelectors = JSON.parse(files.jsonFile[0].buffer.toString("utf-8"));
+    } catch (parseError) {
+      return res.status(400).send({
+        status: 400,
+        message: "Invalid file format. Ensure HTML and JSON files are valid.",
+        error: parseError.message,
+      });
+    }
+
+    // Validate CSS selectors in JSON (for table row)
+    if (!cssSelectors.prices || !cssSelectors.prices.tableRow) {
+      return res.status(400).send({
+        status: 400,
+        message: "CSS selector for 'tableRow' is required in the JSON file.",
+      });
+    }
+
+    // Parse HTML using Cheerio
+    const $ = cheerio.load(html);
+
+    let title,
+      prices = [];
+
+    // Extract title and ensure it's not empty
+    try {
+      title = $(cssSelectors.title).text().trim();
+      if (!title) {
+        return res.status(400).send({
+          status: 400,
+          message: "Title not found in the HTML document.",
+        });
+      }
+    } catch (selectorError) {
+      return res.status(400).send({
+        status: 400,
+        message: "Error extracting title from the HTML.",
+        error: selectorError.message,
+      });
+    }
+
+    // Extract prices from table rows
+    try {
+      // Loop through each table row (excluding headers)
+      $(cssSelectors.prices.tableRow).each((index, element) => {
+        if (index === 0) return; // Skip header row
+
+        const itemName = $(element)
+          .find(cssSelectors.prices.itemName)
+          .text()
+          .trim();
+        const price = $(element).find(cssSelectors.prices.price).text().trim();
+
+        // Ensure itemName and price exist
+        if (itemName && price) {
+          prices.push({
+            itemName,
+            price,
+          });
+        }
+      });
+
+      // Check if prices array is empty
+      if (prices.length === 0) {
+        return res.status(400).send({
+          status: 400,
+          message: "No valid price data found in the table rows.",
+        });
+      }
+    } catch (selectorError) {
+      return res.status(400).send({
+        status: 400,
+        message: "Error extracting prices from the HTML table.",
+        error: selectorError.message,
+      });
+    }
+
+    // Success - Return scraped data
+    return res.status(200).send({
+      status: 200,
+      message: "Scrape complete.",
+      data: {
+        title,
+        prices,
+      },
+    });
+  } catch (err) {
+    // Catch-all error handler for unexpected issues
+    return res.status(500).send({
+      status: 500,
+      message: "An unexpected error occurred.",
+      error: err.message,
+    });
+  }
 });
 
 app.listen(PORT, () => {
