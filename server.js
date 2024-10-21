@@ -95,118 +95,88 @@ app.post("/html-page", uploadFields, (req, res) => {
     });
   }
 });
-app.post("/extract-repetitive-data", uploadFields, (req, res) => {
-  try {
-    const files = req.files;
 
-    // Check if files are present
-    if (!files || !files.htmlFile || !files.jsonFile) {
-      return res.status(400).send({
-        status: 400,
-        message: "Both HTML and JSON files are required.",
-      });
-    }
+app.post("/extract-data", uploadFields, (req, res) => {
+  let files, html, cssSelectors;
 
-    let html, cssSelectors;
+  if (req.files) {
+    files = req.files;
+  }
 
-    // Handle file reading errors (HTML and JSON)
-    try {
-      html = files.htmlFile[0].buffer.toString("utf-8");
-      cssSelectors = JSON.parse(files.jsonFile[0].buffer.toString("utf-8"));
-    } catch (parseError) {
-      return res.status(400).send({
-        status: 400,
-        message: "Invalid file format. Ensure HTML and JSON files are valid.",
-        error: parseError.message,
-      });
-    }
-
-    // Validate CSS selectors in JSON (for table row)
-    if (!cssSelectors.prices || !cssSelectors.prices.tableRow) {
-      return res.status(400).send({
-        status: 400,
-        message: "CSS selector for 'tableRow' is required in the JSON file.",
-      });
-    }
-
-    // Parse HTML using Cheerio
-    const $ = cheerio.load(html);
-
-    let title,
-      prices = [];
-
-    // Extract title and ensure it's not empty
-    try {
-      title = $(cssSelectors.title).text().trim();
-      if (!title) {
-        return res.status(400).send({
-          status: 400,
-          message: "Title not found in the HTML document.",
-        });
-      }
-    } catch (selectorError) {
-      return res.status(400).send({
-        status: 400,
-        message: "Error extracting title from the HTML.",
-        error: selectorError.message,
-      });
-    }
-
-    // Extract prices from table rows
-    try {
-      // Loop through each table row (excluding headers)
-      $(cssSelectors.prices.tableRow).each((index, element) => {
-        if (index === 0) return; // Skip header row
-
-        const itemName = $(element)
-          .find(cssSelectors.prices.itemName)
-          .text()
-          .trim();
-        const price = $(element).find(cssSelectors.prices.price).text().trim();
-
-        // Ensure itemName and price exist
-        if (itemName && price) {
-          prices.push({
-            itemName,
-            price,
-          });
-        }
-      });
-
-      // Check if prices array is empty
-      if (prices.length === 0) {
-        return res.status(400).send({
-          status: 400,
-          message: "No valid price data found in the table rows.",
-        });
-      }
-    } catch (selectorError) {
-      return res.status(400).send({
-        status: 400,
-        message: "Error extracting prices from the HTML table.",
-        error: selectorError.message,
-      });
-    }
-
-    // Success - Return scraped data
-    return res.status(200).send({
-      status: 200,
-      message: "Scrape complete.",
-      data: {
-        title,
-        prices,
-      },
-    });
-  } catch (err) {
-    // Catch-all error handler for unexpected issues
-    return res.status(500).send({
-      status: 500,
-      message: "An unexpected error occurred.",
-      error: err.message,
+  // check to see if the files exist.
+  if (!files || !files.htmlFile || !files.jsonFile) {
+    return res.status(400).send({
+      status: 400,
+      message: "HTML and JSON files are needed.",
     });
   }
+
+  // Manage individual files and throw error if errors
+  try {
+    html = files.htmlFile[0].buffer.toString("utf-8");
+    cssSelectors = JSON.parse(files.jsonFile[0].buffer.toString("utf-8"));
+  } catch (parseError) {
+    return res.status(400).send({
+      status: 400,
+      message: "Invalid file format. Ensure HTML and JSON files are valid.",
+      error: parseError.message,
+    });
+  }
+
+  // If all good, load HTML into cheerio.
+  const $ = cheerio.load(html);
+  const extractedData = {};
+
+  for (const key in cssSelectors) {
+    const selector = cssSelectors[key];
+    console.log("selector : ", selector);
+    console.log("key : ", key);
+
+    if (typeof selector === "string") {
+      // Handle single elements
+      extractedData[key] = $(selector)
+        .first()
+        .text()
+        .replace(/\n\s+/g, "") // remove excess whitespace and newline escapes
+        .trim();
+    } else if (typeof selector === "object" && selector.__root) {
+      console.log("selector : ", selector);
+      // prepare array for table rows
+      const data = [];
+
+      // in this case, going through each table tr
+      $(selector.__root).each((index, element) => {
+        // ignore initial headers from table
+        if (index === 0) {
+          return;
+        }
+
+        // prepare item data obj
+        const itemData = {};
+
+        // loop through the table row data via the cssSelector key
+        for (const subKey in selector) {
+          if (subKey !== "__root") {
+            itemData[subKey] = $(element).find(selector[subKey]).text().trim();
+          }
+        }
+
+        // push to array
+        data.push(itemData);
+      });
+      extractedData[key] = data;
+    }
+  }
+
+  // return 200 with wanted data
+  return res.status(200).send({
+    status: 200,
+    data: extractedData,
+  });
 });
 
 app.listen(PORT, () => {
   console.log(`server running on localhost (http://localhost:${PORT})`);
 });
+
+module.exports.app;
