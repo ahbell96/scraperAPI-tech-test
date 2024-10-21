@@ -66,7 +66,7 @@ app.post("/extract-data", uploadFields, (req, res) => {
         .trim();
     } else if (typeof selector === "object" && selector.__root) {
       // prepare array for table rows
-      const data = [];
+      const tempData = [];
 
       // in this case, going through each table tr
       $(selector.__root).each((index, element) => {
@@ -76,19 +76,21 @@ app.post("/extract-data", uploadFields, (req, res) => {
         }
 
         // prepare item data obj
-        const itemData = {};
+        const item = {};
 
         // loop through the table row data via the cssSelector key
         for (const subKey in selector) {
           if (subKey !== "__root") {
-            itemData[subKey] = $(element).find(selector[subKey]).text().trim();
+            item[subKey] = $(element).find(selector[subKey]).text().trim();
           }
         }
 
         // push to array
-        data.push(itemData);
+        tempData.push(item);
       });
-      extractedData[key] = data;
+
+      // pass key as the property name and pass in the iterated data.
+      extractedData[key] = tempData;
     }
   }
 
