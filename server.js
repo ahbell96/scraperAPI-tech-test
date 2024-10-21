@@ -11,13 +11,14 @@ app.use(express.text({ type: "text/html" }));
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
-// Setting up fields to store the files on upload
+// Setting up fields to store the files on upload,
+// otherwise the routes wont be able to take in files directly
 const uploadFields = upload.fields([
   { name: "htmlFile", maxCount: 1 }, // HTML file
   { name: "jsonFile", maxCount: 1 }, // JSON file
 ]);
 
-app.get("/", (req, res) => {
+app.get("/", (_req, res) => {
   res.status(200).send("hello!");
 });
 
@@ -43,7 +44,8 @@ app.post("/extract-data", uploadFields, (req, res) => {
   } catch (parseError) {
     return res.status(400).send({
       status: 400,
-      message: "Invalid file format. Ensure HTML and JSON files are valid.",
+      message:
+        "Invalid file format. Ensure HTML and JSON files are there / valid.",
       error: parseError.message,
     });
   }
@@ -54,8 +56,6 @@ app.post("/extract-data", uploadFields, (req, res) => {
 
   for (const key in cssSelectors) {
     const selector = cssSelectors[key];
-    console.log("selector : ", selector);
-    console.log("key : ", key);
 
     if (typeof selector === "string") {
       // Handle single elements
@@ -65,7 +65,6 @@ app.post("/extract-data", uploadFields, (req, res) => {
         .replace(/\n\s+/g, "") // remove excess whitespace and newline escapes
         .trim();
     } else if (typeof selector === "object" && selector.__root) {
-      console.log("selector : ", selector);
       // prepare array for table rows
       const data = [];
 
